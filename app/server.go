@@ -5,12 +5,9 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 )
-
-var routes = []string{"/", "/home", "/about"}
 
 type ResponseStatusLine struct {
 	HTTPVersion          string
@@ -115,18 +112,34 @@ func handleResponse(conn net.Conn, request Request) error {
 		OptionalReasonPhrase: "OK",
 	}
 
+	headers := ""
+	responseBody := ""
 	// Check if target is in route
-	if !slices.Contains(routes, request.StatusLine.RequestTarget) {
+	if request.StatusLine.RequestTarget == "/" {
+		headers = ""
+		responseBody = ""
+	} else if strings.HasPrefix(request.StatusLine.RequestTarget, "/echo") {
+		dirtyPathArray := strings.Split(request.StatusLine.RequestTarget, "/")
+		var cleanPathArray []string
+		for _, segment := range dirtyPathArray {
+			if segment != "" {
+				cleanPathArray = append(cleanPathArray, segment)
+			}
+		}
+		if len(cleanPathArray) != 2 {
+			return fmt.Errorf("incorrect endpoint: Expected %s/{STR}", request.StatusLine.RequestTarget)
+		}
+		headers += "Content-Type: text/plain\r\n"
+		headers += fmt.Sprintf("Content-Length: %s\r\n", strconv.Itoa(len(cleanPathArray[1])))
+		responseBody += cleanPathArray[1]
+	} else {
 		responseStatusLine.StatusCode = 404
 		responseStatusLine.OptionalReasonPhrase = "Not Found"
 	}
-	// Headers
-	headers := "\r\n"
-	// Response Body
-	responseBody := ""
+
+	headers += "\r\n"
 	httpResponse := strings.Join([]string{responseStatusLine.ToString(), headers, responseBody}, "")
 	fmt.Printf("\nResponse:\n%q\n", httpResponse)
-
 	httpResponseBytes := []byte(httpResponse)
 	// send response
 	_, err := conn.Write(httpResponseBytes)
@@ -152,7 +165,6 @@ func handleConnection(conn net.Conn) {
 
 	if err != nil {
 		fmt.Println("Error writing response: ", err.Error())
-		os.Exit(1)
 	}
 
 	err = conn.Close()
