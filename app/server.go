@@ -132,6 +132,11 @@ func handleResponse(conn net.Conn, request Request) error {
 		headers += "Content-Type: text/plain\r\n"
 		headers += fmt.Sprintf("Content-Length: %s\r\n", strconv.Itoa(len(cleanPathArray[1])))
 		responseBody += cleanPathArray[1]
+	} else if strings.HasPrefix(request.StatusLine.RequestTarget, "/user-agent") {
+		headers += "Content-Type: text/plain\r\n"
+		headers += fmt.Sprintf("Content-Length: %s\r\n", strconv.Itoa(len(request.Headers["User-Agent"])))
+		responseBody += request.Headers["User-Agent"]
+
 	} else {
 		responseStatusLine.StatusCode = 404
 		responseStatusLine.OptionalReasonPhrase = "Not Found"
