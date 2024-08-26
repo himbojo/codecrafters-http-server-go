@@ -18,7 +18,7 @@ func NewStatusLine(httpVersion string, statusCode int, optionalReponsePhrase str
 	statusLine := StatusLine{
 		HTTPVersion:          "HTTP/1.1",
 		StatusCode:           200,
-		OptionalReasonPhrase: "",
+		OptionalReasonPhrase: "OK",
 	}
 
 	if httpVersion != "" {
@@ -37,11 +37,11 @@ func NewStatusLine(httpVersion string, statusCode int, optionalReponsePhrase str
 }
 
 func (statusLine StatusLine) ToString() string {
-	if statusLine.OptionalReasonPhrase != "" {
-		return strings.Join([]string{statusLine.HTTPVersion, strconv.Itoa(statusLine.StatusCode), statusLine.OptionalReasonPhrase}, " ") + "\r\n"
-	} else {
-		return strings.Join([]string{statusLine.HTTPVersion, strconv.Itoa(statusLine.StatusCode)}, " ") + "\r\n"
-	}
+	// if statusLine.OptionalReasonPhrase != "" {
+	return strings.Join([]string{statusLine.HTTPVersion, strconv.Itoa(statusLine.StatusCode), statusLine.OptionalReasonPhrase}, " ") + "\r\n"
+	// } else {
+	// 	return strings.Join([]string{statusLine.HTTPVersion, strconv.Itoa(statusLine.StatusCode)}, " ") + "\r\n"
+	// }
 
 }
 
