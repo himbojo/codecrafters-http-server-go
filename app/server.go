@@ -68,8 +68,8 @@ func handleRequest(conn net.Conn) (Request, error) {
 			break
 		}
 		parts := strings.SplitN(line, " ", 2)
-		key := parts[0][:len(parts[0])-1]
-		value := parts[1]
+		key := strings.TrimSpace(parts[0][:len(parts[0])-1])
+		value := strings.TrimSpace(parts[1])
 		headerMap[key] = value
 	}
 
