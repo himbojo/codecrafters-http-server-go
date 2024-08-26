@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var routes = []string{"/", "/home", "/about"}
@@ -84,28 +83,16 @@ func handleRequest(conn net.Conn) (Request, error) {
 	}
 
 	// Read the rest of the data into the body
-	// add timeout as often no EOF
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	var body []byte
-	buffer := make([]byte, 1024)
-	for {
-		n := 0
-		n, err = conn.Read(buffer)
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				err = fmt.Errorf("read timeout: %w", err)
-				break
-			}
-			err = fmt.Errorf("read error: %w", err)
-			break
-		}
-		if n > 0 {
-			body = append(body, buffer[:n]...)
-		}
-	}
-	if err != nil {
-		fmt.Println("\nError reading data:", err)
-	}
+	// buffer := make([]byte, 1024)
+	// for {
+	// 	n, err := conn.Read(buffer)
+	// 	if err != nil {
+	// 		fmt.Println("Error reading:", err)
+	// 		break
+	// 	}
+	// 	body = append(body, buffer[:n]...)
+	// }
 
 	// print the body if available
 	fmt.Println("\nBody:")
