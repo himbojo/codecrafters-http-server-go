@@ -141,6 +141,7 @@ func handleResponse(conn net.Conn, request Request) error {
 	fmt.Printf("\nResponse:\n%q\n", httpResponse)
 
 	httpResponseBytes := []byte(httpResponse)
+	// send response
 	_, err := conn.Write(httpResponseBytes)
 	if err != nil {
 		return fmt.Errorf("read timeout: %w", err)
