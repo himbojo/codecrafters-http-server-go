@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -85,6 +86,19 @@ func handleRequest(conn net.Conn) (Request, error) {
 	// 	return Request{}, fmt.Errorf("error reading body: %w", err)
 	// }
 	var body []byte
+	if requestLine.HTTPMethod == "POST" {
+		contentLength, err := strconv.Atoi(headerMap["Content-Length"])
+		if err != nil {
+			fmt.Println("Error:", err)
+			return Request{}, fmt.Errorf("error converting Content-Length: %w", err)
+		}
+		buffer := make([]byte, contentLength)
+		_, err = reader.Read(buffer)
+		if err != nil {
+			return Request{}, fmt.Errorf("error reading bytes: %w", err)
+		}
+		body = append(body, buffer...)
+	}
 
 	fmt.Println("\nBody:")
 	fmt.Print(string(body))
@@ -159,7 +173,7 @@ func handleResponse(conn net.Conn, request Request, directory string) error {
 		headers += "Content-Type: text/plain\r\n"
 		headers += fmt.Sprintf("Content-Length: %d\r\n", len(userAgent))
 		responseBody += userAgent
-	case strings.HasPrefix(request.StatusLine.RequestTarget, "/files"):
+	case strings.HasPrefix(request.StatusLine.RequestTarget, "/files") && request.StatusLine.HTTPMethod == "GET":
 		segments := strings.Split(request.StatusLine.RequestTarget, "/")
 		if len(segments) != 3 {
 			return fmt.Errorf("incorrect endpoint: Expected %s/{filename}", request.StatusLine.RequestTarget)
@@ -190,6 +204,30 @@ func handleResponse(conn net.Conn, request Request, directory string) error {
 		headers += fmt.Sprintf("Content-Length: %d\r\n", len(content))
 		// responseBody += strings.TrimSpace(string(content))
 		responseBody += string(content)
+	case strings.HasPrefix(request.StatusLine.RequestTarget, "/files") && request.StatusLine.HTTPMethod == "POST":
+		segments := strings.Split(request.StatusLine.RequestTarget, "/")
+		if len(segments) != 3 {
+			return fmt.Errorf("incorrect endpoint: Expected %s/{filename}", request.StatusLine.RequestTarget)
+		}
+		filename := segments[2]
+
+		content := request.Body
+		file, err := os.Create(fmt.Sprintf("%s/%s", directory, filename))
+		if err != nil {
+			return fmt.Errorf("error creating file: %w", err)
+		}
+		defer file.Close()
+		// Write bytes to the file
+		_, err = file.Write(content)
+		if err != nil {
+			return fmt.Errorf("error writing file: %w", err)
+		}
+		// headers += "Content-Type: application/octet-stream\r\n"
+		// headers += fmt.Sprintf("Content-Length: %d\r\n", len(content))
+		// responseBody += strings.TrimSpace(string(content))
+		// responseBody += string(content)
+		responseStatusLine.StatusCode = 201
+		responseStatusLine.OptionalReasonPhrase = "Created"
 	default:
 		responseStatusLine.StatusCode = 404
 		responseStatusLine.OptionalReasonPhrase = "Not Found"
