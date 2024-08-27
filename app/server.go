@@ -195,9 +195,12 @@ func generateResponse(request Request, directory string, responseStatusLine *Res
 func handleEncoding(request Request, headers string) string {
 	acceptEncoding, exists := request.Headers["Accept-Encoding"]
 	if exists {
-		fmt.Printf("\nClients supported encoding:\n%s\n", acceptEncoding)
-		if acceptEncoding == "gzip" {
-			headers += "Content-Encoding: gzip\r\n"
+		encodingTypes := strings.Split(acceptEncoding, ",")
+		for _, encodingType := range encodingTypes {
+			fmt.Printf("\nClients supported encoding:\n%s\n", encodingType)
+			if strings.TrimSpace(encodingType) == "gzip" {
+				headers += "Content-Encoding: gzip\r\n"
+			}
 		}
 	}
 	fmt.Printf("\nCurrently Headers looks like:\n%s", headers)
