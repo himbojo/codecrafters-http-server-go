@@ -123,7 +123,7 @@ func readFileIntoByteArray(filename string) ([]byte, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		buffer.Write(scanner.Bytes())
-		buffer.WriteByte('\n') // Add newline character to preserve line breaks
+		// buffer.WriteByte('\n') // Add newline character to preserve line breaks
 	}
 
 	if err := scanner.Err(); err != nil {
