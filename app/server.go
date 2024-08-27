@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"net"
 	"os"
@@ -192,7 +193,19 @@ func generateResponse(request Request, directory string, responseStatusLine *Res
 	return headers, responseBody, nil
 }
 
-func handleEncoding(request Request, headers string) string {
+func compressString(data string) ([]byte, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write([]byte(data)); err != nil {
+		return nil, err
+	}
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func handleEncoding(request Request, headers, body string) (string, string, error) {
 	acceptEncoding, exists := request.Headers["Accept-Encoding"]
 	if exists {
 		encodingTypes := strings.Split(acceptEncoding, ",")
@@ -200,11 +213,25 @@ func handleEncoding(request Request, headers string) string {
 			fmt.Printf("\nClients supported encoding:\n%s\n", encodingType)
 			if strings.TrimSpace(encodingType) == "gzip" {
 				headers += "Content-Encoding: gzip\r\n"
+				body = strings.TrimSpace(body)
+				fmt.Printf("\nBody before compression:\n%s\n", body)
+				compressedData, err := compressString(body)
+				if err != nil {
+					fmt.Println("Error compressing string:", err)
+					return "", "", fmt.Errorf("error writing file: %w", err)
+				}
+				fmt.Printf("Compressed data (hex):\n%x\n", compressedData)
+				body = string(compressedData)
+
+				// 1f 8b 08 00 00 00 00 00
+				// 00 ff 4a 4c 4a 06 04 00
+				// 00 ff ff c2 41 24 35 03
+				// 00 00 00
 			}
 		}
 	}
 	fmt.Printf("\nCurrently Headers looks like:\n%s", headers)
-	return headers
+	return headers, body, nil
 
 }
 
@@ -215,10 +242,15 @@ func handleEcho(request Request, headers, responseBody *string) (string, string,
 	}
 
 	*headers += "Content-Type: text/plain\r\n"
-	*headers = handleEncoding(request, *headers)
-	*headers += fmt.Sprintf("Content-Length: %d\r\n", len(segments[2]))
+
+	var err error
+	*headers, *responseBody, err = handleEncoding(request, *headers, segments[2])
+	if err != nil {
+		return *headers, *responseBody, err
+	}
+
+	*headers += fmt.Sprintf("Content-Length: %d\r\n", len(*responseBody))
 	fmt.Printf("\nNow Headers looks like this:\n%s\n", *headers)
-	*responseBody += segments[2]
 	return *headers, *responseBody, nil
 }
 
