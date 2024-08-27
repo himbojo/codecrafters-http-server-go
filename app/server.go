@@ -154,83 +154,9 @@ func handleResponse(conn net.Conn, request Request, directory string) error {
 		OptionalReasonPhrase: "OK",
 	}
 
-	headers := ""
-	responseBody := ""
-
-	switch {
-	case request.StatusLine.RequestTarget == "/":
-		// No additional headers or body
-	case strings.HasPrefix(request.StatusLine.RequestTarget, "/echo"):
-		segments := strings.Split(request.StatusLine.RequestTarget, "/")
-		if len(segments) != 3 {
-			return fmt.Errorf("incorrect endpoint: Expected %s/{STR}", request.StatusLine.RequestTarget)
-		}
-		headers += "Content-Type: text/plain\r\n"
-		headers += fmt.Sprintf("Content-Length: %d\r\n", len(segments[2]))
-		responseBody += segments[2]
-	case strings.HasPrefix(request.StatusLine.RequestTarget, "/user-agent"):
-		userAgent := request.Headers["User-Agent"]
-		headers += "Content-Type: text/plain\r\n"
-		headers += fmt.Sprintf("Content-Length: %d\r\n", len(userAgent))
-		responseBody += userAgent
-	case strings.HasPrefix(request.StatusLine.RequestTarget, "/files") && request.StatusLine.HTTPMethod == "GET":
-		segments := strings.Split(request.StatusLine.RequestTarget, "/")
-		if len(segments) != 3 {
-			return fmt.Errorf("incorrect endpoint: Expected %s/{filename}", request.StatusLine.RequestTarget)
-		}
-		filename := segments[2]
-
-		exists, err := fileExistsInDirectory(directory, filename)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return fmt.Errorf("error checking if file exists: %w", err)
-		}
-		if !exists {
-			fmt.Printf("\nFile %s does not exist in directory %s\n", filename, directory)
-			responseStatusLine.StatusCode = 404
-			responseStatusLine.OptionalReasonPhrase = "Not Found"
-			break
-		}
-
-		fmt.Printf("\nFile %s exists in directory %s\n", filename, directory)
-		content, err := readFileIntoByteArray(fmt.Sprintf("%s%s", directory, filename))
-		if err != nil {
-			fmt.Println("Error:", err)
-			return fmt.Errorf("error checking if file exists: %w", err)
-		}
-		fmt.Printf("\nFile Content:\n%s\n", string(content))
-
-		headers += "Content-Type: application/octet-stream\r\n"
-		headers += fmt.Sprintf("Content-Length: %d\r\n", len(content))
-		// responseBody += strings.TrimSpace(string(content))
-		responseBody += string(content)
-	case strings.HasPrefix(request.StatusLine.RequestTarget, "/files") && request.StatusLine.HTTPMethod == "POST":
-		segments := strings.Split(request.StatusLine.RequestTarget, "/")
-		if len(segments) != 3 {
-			return fmt.Errorf("incorrect endpoint: Expected %s/{filename}", request.StatusLine.RequestTarget)
-		}
-		filename := segments[2]
-
-		content := request.Body
-		file, err := os.Create(fmt.Sprintf("%s/%s", directory, filename))
-		if err != nil {
-			return fmt.Errorf("error creating file: %w", err)
-		}
-		defer file.Close()
-		// Write bytes to the file
-		_, err = file.Write(content)
-		if err != nil {
-			return fmt.Errorf("error writing file: %w", err)
-		}
-		// headers += "Content-Type: application/octet-stream\r\n"
-		// headers += fmt.Sprintf("Content-Length: %d\r\n", len(content))
-		// responseBody += strings.TrimSpace(string(content))
-		// responseBody += string(content)
-		responseStatusLine.StatusCode = 201
-		responseStatusLine.OptionalReasonPhrase = "Created"
-	default:
-		responseStatusLine.StatusCode = 404
-		responseStatusLine.OptionalReasonPhrase = "Not Found"
+	headers, responseBody, err := generateResponse(request, directory, &responseStatusLine)
+	if err != nil {
+		return err
 	}
 
 	headers += "\r\n"
@@ -241,6 +167,114 @@ func handleResponse(conn net.Conn, request Request, directory string) error {
 		return fmt.Errorf("error writing response: %w", err)
 	}
 	return nil
+}
+
+func generateResponse(request Request, directory string, responseStatusLine *ResponseStatusLine) (string, string, error) {
+	headers := ""
+	responseBody := ""
+
+	switch {
+	case request.StatusLine.RequestTarget == "/":
+		// No additional headers or body
+	case strings.HasPrefix(request.StatusLine.RequestTarget, "/echo"):
+		return handleEcho(request, &headers, &responseBody)
+	case strings.HasPrefix(request.StatusLine.RequestTarget, "/user-agent"):
+		return handleUserAgent(request, &headers, &responseBody)
+	case strings.HasPrefix(request.StatusLine.RequestTarget, "/files") && request.StatusLine.HTTPMethod == "GET":
+		return handleFileGet(request, directory, responseStatusLine, &headers, &responseBody)
+	case strings.HasPrefix(request.StatusLine.RequestTarget, "/files") && request.StatusLine.HTTPMethod == "POST":
+		return handleFilePost(request, directory, responseStatusLine)
+	default:
+		responseStatusLine.StatusCode = 404
+		responseStatusLine.OptionalReasonPhrase = "Not Found"
+	}
+
+	return headers, responseBody, nil
+}
+
+func handleEncoding(request Request, headers string) string {
+	acceptEncoding, exists := request.Headers["Accept-Encoding"]
+	if exists {
+		fmt.Printf("\nClients supported encoding:\n%s\n", acceptEncoding)
+		if acceptEncoding == "gzip" {
+			headers += "Content-Encoding: gzip\r\n"
+		}
+	}
+	fmt.Printf("\nCurrently Headers looks like:\n%s", headers)
+	return headers
+
+}
+
+func handleEcho(request Request, headers, responseBody *string) (string, string, error) {
+	segments := strings.Split(request.StatusLine.RequestTarget, "/")
+	if len(segments) != 3 {
+		return "", "", fmt.Errorf("incorrect endpoint: Expected %s/{STR}", request.StatusLine.RequestTarget)
+	}
+
+	*headers += "Content-Type: text/plain\r\n"
+	*headers = handleEncoding(request, *headers)
+	*headers += fmt.Sprintf("Content-Length: %d\r\n", len(segments[2]))
+	fmt.Printf("\nNow Headers looks like this:\n%s\n", *headers)
+	*responseBody += segments[2]
+	return *headers, *responseBody, nil
+}
+
+func handleUserAgent(request Request, headers, responseBody *string) (string, string, error) {
+	userAgent := request.Headers["User-Agent"]
+	*headers += "Content-Type: text/plain\r\n"
+	*headers += fmt.Sprintf("Content-Length: %d\r\n", len(userAgent))
+	*responseBody += userAgent
+	return *headers, *responseBody, nil
+}
+
+func handleFileGet(request Request, directory string, responseStatusLine *ResponseStatusLine, headers, responseBody *string) (string, string, error) {
+	segments := strings.Split(request.StatusLine.RequestTarget, "/")
+	if len(segments) != 3 {
+		return "", "", fmt.Errorf("incorrect endpoint: Expected %s/{filename}", request.StatusLine.RequestTarget)
+	}
+	filename := segments[2]
+
+	exists, err := fileExistsInDirectory(directory, filename)
+	if err != nil {
+		return "", "", fmt.Errorf("error checking if file exists: %w", err)
+	}
+	if !exists {
+		responseStatusLine.StatusCode = 404
+		responseStatusLine.OptionalReasonPhrase = "Not Found"
+		return *headers, *responseBody, nil
+	}
+
+	content, err := readFileIntoByteArray(fmt.Sprintf("%s%s", directory, filename))
+	if err != nil {
+		return "", "", fmt.Errorf("error reading file: %w", err)
+	}
+
+	*headers += "Content-Type: application/octet-stream\r\n"
+	*headers += fmt.Sprintf("Content-Length: %d\r\n", len(content))
+	*responseBody += string(content)
+	return *headers, *responseBody, nil
+}
+
+func handleFilePost(request Request, directory string, responseStatusLine *ResponseStatusLine) (string, string, error) {
+	segments := strings.Split(request.StatusLine.RequestTarget, "/")
+	if len(segments) != 3 {
+		return "", "", fmt.Errorf("incorrect endpoint: Expected %s/{filename}", request.StatusLine.RequestTarget)
+	}
+	filename := segments[2]
+
+	content := request.Body
+	file, err := os.Create(fmt.Sprintf("%s/%s", directory, filename))
+	if err != nil {
+		return "", "", fmt.Errorf("error creating file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err = file.Write(content); err != nil {
+		return "", "", fmt.Errorf("error writing file: %w", err)
+	}
+	responseStatusLine.StatusCode = 201
+	responseStatusLine.OptionalReasonPhrase = "Created"
+	return "", "", nil
 }
 
 func handleConnection(conn net.Conn, directory string) {
