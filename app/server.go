@@ -133,7 +133,7 @@ func readFileIntoByteArray(filename string) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-func handleResponse(conn net.Conn, request Request) error {
+func handleResponse(conn net.Conn, request Request, directory string) error {
 	responseStatusLine := ResponseStatusLine{
 		HTTPVersion:          "HTTP/1.1",
 		StatusCode:           200,
@@ -164,7 +164,6 @@ func handleResponse(conn net.Conn, request Request) error {
 		if len(segments) != 3 {
 			return fmt.Errorf("incorrect endpoint: Expected %s/{filename}", request.StatusLine.RequestTarget)
 		}
-		directory := "/tmp/"
 		filename := segments[2]
 
 		exists, err := fileExistsInDirectory(directory, filename)
@@ -206,7 +205,7 @@ func handleResponse(conn net.Conn, request Request) error {
 	return nil
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, directory string) {
 	defer conn.Close()
 	fmt.Println("Remote:", conn.RemoteAddr())
 	fmt.Println("Local:", conn.LocalAddr().String())
@@ -218,9 +217,20 @@ func handleConnection(conn net.Conn) {
 		os.Exit(1)
 	}
 
-	if err := handleResponse(conn, request); err != nil {
+	if err := handleResponse(conn, request, directory); err != nil {
 		fmt.Println("Error writing response:", err)
 	}
+}
+
+func directoryExists(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return info.IsDir(), nil
 }
 
 func main() {
@@ -232,7 +242,35 @@ func main() {
 	}
 
 	defer listener.Close()
+	var directory string
+	if len(os.Args) < 2 {
+		fmt.Println("No command line arguments provided.")
+	} else {
+		for i, arg := range os.Args {
+			switch arg {
+			case "--directory":
+				if i+1 < len(os.Args) {
+					directory = os.Args[i+1]
+				} else {
+					fmt.Println("No directory specified after --directory")
+					return
+				}
 
+				exists, err := directoryExists(directory)
+				if err != nil {
+					fmt.Println("Error:", err)
+					return
+				}
+
+				if exists {
+					fmt.Printf("Directory %s exists.\n", directory)
+				} else {
+					fmt.Printf("Directory %s does not exist.\n", directory)
+					return
+				}
+			}
+		}
+	}
 	// this should already handle concurrent requests
 	for {
 		conn, err := listener.Accept()
@@ -240,6 +278,6 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn)
+		go handleConnection(conn, directory)
 	}
 }
